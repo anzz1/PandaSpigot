@@ -1,0 +1,522 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: uRyanxD <familiarodrigues123ro@gmail.com>
+Date: Fri, 19 Jun 2026 07:11:49 +0000
+Subject: [PATCH] Alternative Chunk Ticking Selection
+
+
+diff --git a/src/main/java/com/hpfxd/pandaspigot/config/PandaSpigotWorldConfig.java b/src/main/java/com/hpfxd/pandaspigot/config/PandaSpigotWorldConfig.java
+index 360ed37b95fce68941c234615b465090b8ea7308..fadd12e30152907f825b7e61191c67f79086382d 100644
+--- a/src/main/java/com/hpfxd/pandaspigot/config/PandaSpigotWorldConfig.java
++++ b/src/main/java/com/hpfxd/pandaspigot/config/PandaSpigotWorldConfig.java
+@@ -62,4 +62,15 @@ public class PandaSpigotWorldConfig {
+     @Comment("This option controls whether or not there is a chance for arrow crits to deal extra damage.\n" +
+             "By default, this is true (vanilla behaviour)")
+     public boolean randomArrowDamage = true;
++
++    @Comment("When enabled, use heavily optimized alternative chunk ticking algorithm from Spigot\n" +
++            "with hard-cap of view-distance 7, caps how many chunks are ticked per tick and randomly\n" +
++            "selects chunks to tick based on the number of players in them, which does not emulate\n" +
++            "vanilla behaviour e.g. rate of plant growth.\n" +
++            "\n" +
++            "When disabled, uses optimized chunk ticking algorithm from 1.9, which emulates\n" +
++            "vanilla 1.8 behaviour but is faster.\n" +
++            "\n" +
++            "By default, this is false (vanilla 1.9 behaviour)")
++    public boolean useSpigotChunkSelection = false;
+ }
+diff --git a/src/main/java/net/minecraft/server/Chunk.java b/src/main/java/net/minecraft/server/Chunk.java
+index 3cb8d99311e2fa9a4a1173f6ef9e8dee957b20fa..d1cecf5c5925d00fc258295ed6949fbbd57ce58c 100644
+--- a/src/main/java/net/minecraft/server/Chunk.java
++++ b/src/main/java/net/minecraft/server/Chunk.java
+@@ -1209,6 +1209,12 @@ public class Chunk {
+         // Spigot End
+     }
+ 
++    // PandaSpigot start - Alternative Chunk Ticking Selection
++    public boolean r() {
++        return this.p;
++    }
++    // PandaSpigot end
++
+     public ChunkCoordIntPair j() {
+         return this.chunkCoords; // PandaSpigot
+     }
+diff --git a/src/main/java/net/minecraft/server/ChunkCoordIntPair.java b/src/main/java/net/minecraft/server/ChunkCoordIntPair.java
+index 652c07975c7b3a3c5e3dc68cb60ca5fc52e1848c..cf8b6f1cf81a4dcc6d2e1f3b8fa369d14a668acd 100644
+--- a/src/main/java/net/minecraft/server/ChunkCoordIntPair.java
++++ b/src/main/java/net/minecraft/server/ChunkCoordIntPair.java
+@@ -33,6 +33,17 @@ public class ChunkCoordIntPair {
+         }
+     }
+ 
++    // PandaSpigot start - Alternative Chunk Ticking Selection
++    public double distanceToSq(Entity entity) {
++        double centerX = this.x * 16 + 8;
++        double centerZ = this.z * 16 + 8;
++        double dx = centerX - entity.locX;
++        double dz = centerZ - entity.locZ;
++
++        return dx * dx + dz * dz;
++    }
++    // PandaSpigot end
++
+     public int a() {
+         return (this.x << 4) + 8;
+     }
+diff --git a/src/main/java/net/minecraft/server/PlayerChunkMap.java b/src/main/java/net/minecraft/server/PlayerChunkMap.java
+index e1880604533f42c050b2bd0195f9f46c93409cc4..f4c88d00fb6774e3545b93b468c3626f7baf0657 100644
+--- a/src/main/java/net/minecraft/server/PlayerChunkMap.java
++++ b/src/main/java/net/minecraft/server/PlayerChunkMap.java
+@@ -15,8 +15,13 @@ import org.bukkit.craftbukkit.chunkio.ChunkIOExecutor;
+ import java.util.HashMap;
+ // CraftBukkit end
+ 
++// PandaSpigot start
++import com.google.common.collect.AbstractIterator;
++// PandaSpigot end
++
+ public class PlayerChunkMap {
+ 
++    private static final java.util.function.Predicate<EntityPlayer> NON_SPECTATOR = player -> player != null && !player.isSpectator(); // PandaSpigot - Alternative Chunk Ticking Selection
+     private static final Logger a = LogManager.getLogger();
+     private final WorldServer world;
+     private final List<EntityPlayer> managedPlayers = Lists.newArrayList();
+@@ -37,6 +42,41 @@ public class PlayerChunkMap {
+         return this.world;
+     }
+ 
++    // PandaSpigot start - Alternative Chunk Ticking Selection
++    public Iterator<Chunk> getActiveChunks() {
++        final Iterator<PlayerChunk> iterator = this.f.iterator();
++
++        return new AbstractIterator<Chunk>() {
++            @Override
++            protected Chunk computeNext() {
++                while (iterator.hasNext()) {
++                    PlayerChunk playerChunk = iterator.next();
++                    Chunk chunk = playerChunk.getChunk();
++
++                    if (chunk == null) {
++                        continue;
++                    }
++
++                    if (!chunk.u() && chunk.isDone()) { // Has lights and is ready
++                        return chunk;
++                    }
++
++                    if (!chunk.r()) {
++                        return chunk;
++                    }
++
++                    if (!playerChunk.hasPlayersNearby((double)PlayerChunkMap.this.world.spigotConfig.viewDistance * 16.0D, NON_SPECTATOR)) {
++                        continue;
++                    }
++
++                    return chunk;
++                }
++                return endOfData();
++            }
++        };
++    }
++    // PandaSpigot end
++
+     public void flush() {
+         long i = this.world.getTime();
+         int j;
+@@ -517,6 +557,22 @@ public class PlayerChunkMap {
+             }
+ 
+         }
++
++        // PandaSpigot start - Alternative Chunk Ticking Selection
++        public Chunk getChunk() {
++            return world.getChunkAt(location.x, location.z);
++        }
++
++        public boolean hasPlayersNearby(double distance, java.util.function.Predicate<EntityPlayer> predicate) {
++            for (EntityPlayer player : this.b) {
++                if (predicate.test(player) && this.location.distanceToSq(player) < distance * distance) {
++                    return true;
++                }
++            }
++
++            return false;
++        }
++        // PandaSpigot end
+     }
+ 
+     // CraftBukkit start - Sorter to load nearby chunks first
+diff --git a/src/main/java/net/minecraft/server/World.java b/src/main/java/net/minecraft/server/World.java
+index 90c7a6f4777d2fa2bb08b539be59ead6772572d1..4fc5f239ab3643bea5dba873acddc79a0b92117d 100644
+--- a/src/main/java/net/minecraft/server/World.java
++++ b/src/main/java/net/minecraft/server/World.java
+@@ -2345,43 +2345,45 @@ public abstract class World implements IBlockAccess {
+         int k;
+         int l;
+ 
+-        // Spigot start
+-        int optimalChunks = spigotConfig.chunksPerTick;
+-        // Quick conditions to allow us to exist early
+-        if ( optimalChunks > 0  ) {
+-        // Keep chunks with growth inside of the optimal chunk range
+-        int chunksPerPlayer = Math.min( 200, Math.max( 1, (int) ( ( ( optimalChunks - players.size() ) / (double) players.size() ) + 0.5 ) ) );
+-        int randRange = 3 + chunksPerPlayer / 30;
+-        // Limit to normal tick radius - including view distance
+-        randRange = ( randRange > chunkTickRadius ) ? chunkTickRadius : randRange;
+-        // odds of growth happening vs growth happening in vanilla
+-        this.growthOdds = this.modifiedOdds = Math.max( 35, Math.min( 100, ( ( chunksPerPlayer + 1 ) * 100F ) / 15F ) );
+-        // Spigot end
+-        for (i = 0; i < this.players.size(); ++i) {
+-            entityhuman = (EntityHuman) this.players.get(i);
+-            j = MathHelper.floor(entityhuman.locX / 16.0D);
+-            k = MathHelper.floor(entityhuman.locZ / 16.0D);
+-            l = this.q();
+-
+-            // Spigot start - Always update the chunk the player is on
+-            long key = chunkToKey( j, k );
+-            int existingPlayers = Math.max( 0, chunkTickList.get( key ) ); // filter out -1
+-            chunkTickList.put( key, (short) ( existingPlayers + 1 ) );
+-
+-            // Check and see if we update the chunks surrounding the player this tick
+-            for ( int chunk = 0; chunk < chunksPerPlayer; chunk++ )
+-            {
+-                int dx = ( random.nextBoolean() ? 1 : -1 ) * random.nextInt( randRange );
+-                int dz = ( random.nextBoolean() ? 1 : -1 ) * random.nextInt( randRange );
+-                long hash = chunkToKey( dx + j, dz + k );
+-                if ( !chunkTickList.contains( hash ) && this.chunkProvider.isChunkLoaded(dx + j, dz + k ) )
+-                {
+-                    chunkTickList.put( hash, (short) -1 ); // no players
++        if (this.pandaSpigotConfig.useSpigotChunkSelection) { // PandaSpigot - Alternative Chunk Ticking Selection
++            // Spigot start
++            int optimalChunks = spigotConfig.chunksPerTick;
++            // Quick conditions to allow us to exist early
++            if ( optimalChunks > 0  ) {
++                // Keep chunks with growth inside of the optimal chunk range
++                int chunksPerPlayer = Math.min( 200, Math.max( 1, (int) ( ( ( optimalChunks - players.size() ) / (double) players.size() ) + 0.5 ) ) );
++                int randRange = 3 + chunksPerPlayer / 30;
++                // Limit to normal tick radius - including view distance
++                randRange = ( randRange > chunkTickRadius ) ? chunkTickRadius : randRange;
++                // odds of growth happening vs growth happening in vanilla
++                this.growthOdds = this.modifiedOdds = Math.max( 35, Math.min( 100, ( ( chunksPerPlayer + 1 ) * 100F ) / 15F ) );
++                // Spigot end
++                for (i = 0; i < this.players.size(); ++i) {
++                    entityhuman = (EntityHuman) this.players.get(i);
++                    j = MathHelper.floor(entityhuman.locX / 16.0D);
++                    k = MathHelper.floor(entityhuman.locZ / 16.0D);
++                    l = this.q();
++
++                    // Spigot start - Always update the chunk the player is on
++                    long key = chunkToKey( j, k );
++                    int existingPlayers = Math.max( 0, chunkTickList.get( key ) ); // filter out -1
++                    chunkTickList.put( key, (short) ( existingPlayers + 1 ) );
++
++                    // Check and see if we update the chunks surrounding the player this tick
++                    for ( int chunk = 0; chunk < chunksPerPlayer; chunk++ )
++                    {
++                        int dx = ( random.nextBoolean() ? 1 : -1 ) * random.nextInt( randRange );
++                        int dz = ( random.nextBoolean() ? 1 : -1 ) * random.nextInt( randRange );
++                        long hash = chunkToKey( dx + j, dz + k );
++                        if ( !chunkTickList.contains( hash ) && this.chunkProvider.isChunkLoaded(dx + j, dz + k ) )
++                        {
++                            chunkTickList.put( hash, (short) -1 ); // no players
++                        }
++                    }
+                 }
++                // Spigot End
+             }
+         }
+-            // Spigot End
+-        }
+ 
+         this.methodProfiler.b();
+         if (this.L > 0) {
+diff --git a/src/main/java/net/minecraft/server/WorldServer.java b/src/main/java/net/minecraft/server/WorldServer.java
+index 864b63f20167491ecef7e51be7d170d8b141d166..58380c5ed20787a344e9b8397c93196365a503ce 100644
+--- a/src/main/java/net/minecraft/server/WorldServer.java
++++ b/src/main/java/net/minecraft/server/WorldServer.java
+@@ -372,146 +372,168 @@ public class WorldServer extends World implements IAsyncTaskHandler {
+         }
+     }
+ 
++    // PandaSpigot start - Alternative Chunk Ticking Selection
+     protected void h() {
+         super.h();
+         if (this.worldData.getType() == WorldType.DEBUG_ALL_BLOCK_STATES) {
+-            // Spigot start
+-           gnu.trove.iterator.TLongShortIterator iterator = this.chunkTickList.iterator();
++            if (this.pandaSpigotConfig.useSpigotChunkSelection) {
++                // Spigot start
++                gnu.trove.iterator.TLongShortIterator iterator = this.chunkTickList.iterator();
+ 
+-            while (iterator.hasNext()) {
+-                iterator.advance();
+-                long chunkCoord = iterator.key();
++                while (iterator.hasNext()) {
++                    iterator.advance();
++                    long chunkCoord = iterator.key();
+ 
+-                this.getChunkAt(World.keyToX( chunkCoord ), World.keyToZ( chunkCoord )).b(false);
+-                // Spigot end
++                    this.getChunkAt(World.keyToX( chunkCoord ), World.keyToZ( chunkCoord )).b(false);
++                    // Spigot end
++                }
++            } else {
++                Iterator<Chunk> iterator = manager.getActiveChunks();
++                Chunk chunk = iterator.next();
++                chunk.b(false);
+             }
+-
++            // PandaSpigot end
+         } else {
+-            int i = 0;
+-            int j = 0;
+-
+-            // CraftBukkit start
+-            //for (Iterator iterator1 = this.chunkTickList.iterator(); iterator1.hasNext(); this.methodProfiler.b()) {
+-            //    ChunkCoordIntPair chunkcoordintpair1 = (ChunkCoordIntPair) iterator1.next();
+-            //    int k = chunkcoordintpair1.x * 16;
+-            //    int l = chunkcoordintpair1.z * 16;
+-            // Spigot start
+-            for (gnu.trove.iterator.TLongShortIterator iter = chunkTickList.iterator(); iter.hasNext(); )
+-            {
+-                iter.advance();
+-                long chunkCoord = iter.key();
+-                int chunkX = World.keyToX( chunkCoord );
+-                int chunkZ = World.keyToZ( chunkCoord );
+-                // If unloaded, or in procedd of being unloaded, drop it
+-                if ( ( !this.chunkProvider.isChunkLoaded( chunkX, chunkZ ) ) || ( this.chunkProviderServer.unloadQueue.contains( chunkX, chunkZ ) ) )
++            if (this.pandaSpigotConfig.useSpigotChunkSelection) {
++                // CraftBukkit start
++                //for (Iterator iterator1 = this.chunkTickList.iterator(); iterator1.hasNext(); this.methodProfiler.b()) {
++                //    ChunkCoordIntPair chunkcoordintpair1 = (ChunkCoordIntPair) iterator1.next();
++                //    int k = chunkcoordintpair1.x * 16;
++                //    int l = chunkcoordintpair1.z * 16;
++                // Spigot start
++                for (gnu.trove.iterator.TLongShortIterator iter = chunkTickList.iterator(); iter.hasNext(); )
+                 {
+-                    iter.remove();
+-                    continue;
+-                }
+-                // Spigot end
+-                // ChunkCoordIntPair chunkcoordintpair = (ChunkCoordIntPair) iterator.next();
+-                int k = chunkX * 16;
+-                int l = chunkZ * 16;
++                    iter.advance();
++                    long chunkCoord = iter.key();
++                    int chunkX = World.keyToX( chunkCoord );
++                    int chunkZ = World.keyToZ( chunkCoord );
++                    // If unloaded, or in procedd of being unloaded, drop it
++                    if ( ( !this.chunkProvider.isChunkLoaded( chunkX, chunkZ ) ) || ( this.chunkProviderServer.unloadQueue.contains( chunkX, chunkZ ) ) )
++                    {
++                        iter.remove();
++                        continue;
++                    }
++                    // Spigot end
++                    // ChunkCoordIntPair chunkcoordintpair = (ChunkCoordIntPair) iterator.next();
++                    int k = chunkX * 16;
++                    int l = chunkZ * 16;
+ 
+-                this.methodProfiler.a("getChunk");
+-                Chunk chunk = this.getChunkAt(chunkX, chunkZ);
+-                // CraftBukkit end
++                    this.methodProfiler.a("getChunk");
++                    Chunk chunk = this.getChunkAt(chunkX, chunkZ);
++                    // CraftBukkit end
+ 
+-                this.a(k, l, chunk);
+-                this.methodProfiler.c("tickChunk");
+-                chunk.b(false);
+-                this.methodProfiler.c("thunder");
+-                int i1;
+-                BlockPosition blockposition;
+-
+-                if (!this.paperSpigotConfig.disableThunder && this.random.nextInt(100000) == 0 && this.S() && this.R()) { // PaperSpigot - Disable thunder
+-                    this.m = this.m * 3 + 1013904223;
+-                    i1 = this.m >> 2;
+-                    blockposition = this.a(new BlockPosition(k + (i1 & 15), 0, l + (i1 >> 8 & 15)));
+-                    if (this.isRainingAt(blockposition)) {
+-                        this.strikeLightning(new EntityLightning(this, (double) blockposition.getX(), (double) blockposition.getY(), (double) blockposition.getZ()));
+-                    }
++                    this.tickChunk(k, l, chunk);
+                 }
++            } else {
++                for (Iterator<Chunk> iterator1 = manager.getActiveChunks(); iterator1.hasNext();) {
++                    this.methodProfiler.a("getChunk");
++                    Chunk chunk = iterator1.next();
++                    int k = chunk.locX * 16;
++                    int l = chunk.locZ * 16;
+ 
+-                this.methodProfiler.c("iceandsnow");
+-                if (!this.paperSpigotConfig.disableIceAndSnow && this.random.nextInt(16) == 0) { // PaperSpigot - Disable ice and snow
+-                    this.m = this.m * 3 + 1013904223;
+-                    i1 = this.m >> 2;
+-                    blockposition = this.q(new BlockPosition(k + (i1 & 15), 0, l + (i1 >> 8 & 15)));
+-                    BlockPosition blockposition1 = blockposition.down();
+-
+-                    if (this.w(blockposition1)) {
+-                        // CraftBukkit start
+-                        BlockState blockState = this.getWorld().getBlockAt(blockposition1.getX(), blockposition1.getY(), blockposition1.getZ()).getState();
+-                        blockState.setTypeId(Block.getId(Blocks.ICE));
+-
+-                        BlockFormEvent iceBlockForm = new BlockFormEvent(blockState.getBlock(), blockState);
+-                        this.getServer().getPluginManager().callEvent(iceBlockForm);
+-                        if (!iceBlockForm.isCancelled()) {
+-                            blockState.update(true);
+-                        }
+-                        // CraftBukkit end
+-                    }
++                    this.tickChunk(k, l, chunk);
++                }
++            }
++        }
++        // Spigot Start
++        if ( this.pandaSpigotConfig.useSpigotChunkSelection && spigotConfig.clearChunksOnTick )
++        {
++            chunkTickList.clear();
++        }
++        // Spigot End
++    }
+ 
+-                    if (this.S() && this.f(blockposition, true)) {
+-                        // CraftBukkit start
+-                        BlockState blockState = this.getWorld().getBlockAt(blockposition.getX(), blockposition.getY(), blockposition.getZ()).getState();
+-                        blockState.setTypeId(Block.getId(Blocks.SNOW_LAYER));
++    protected void tickChunk(int k, int l, Chunk chunk) {
++        int i = 0;
++        int j = 0;
++
++        this.a(k, l, chunk);
++        this.methodProfiler.c("tickChunk");
++        chunk.b(false);
++        this.methodProfiler.c("thunder");
++        int i1;
++        BlockPosition blockposition;
++
++        if (!this.paperSpigotConfig.disableThunder && this.random.nextInt(100000) == 0 && this.S() && this.R()) { // PaperSpigot - Disable thunder
++            this.m = this.m * 3 + 1013904223;
++            i1 = this.m >> 2;
++            blockposition = this.a(new BlockPosition(k + (i1 & 15), 0, l + (i1 >> 8 & 15)));
++            if (this.isRainingAt(blockposition)) {
++                this.strikeLightning(new EntityLightning(this, (double) blockposition.getX(), (double) blockposition.getY(), (double) blockposition.getZ()));
++            }
++        }
+ 
+-                        BlockFormEvent snow = new BlockFormEvent(blockState.getBlock(), blockState);
+-                        this.getServer().getPluginManager().callEvent(snow);
+-                        if (!snow.isCancelled()) {
+-                            blockState.update(true);
+-                        }
+-                        // CraftBukkit end
+-                    }
++        this.methodProfiler.c("iceandsnow");
++        if (!this.paperSpigotConfig.disableIceAndSnow && this.random.nextInt(16) == 0) { // PaperSpigot - Disable ice and snow
++            this.m = this.m * 3 + 1013904223;
++            i1 = this.m >> 2;
++            blockposition = this.q(new BlockPosition(k + (i1 & 15), 0, l + (i1 >> 8 & 15)));
++            BlockPosition blockposition1 = blockposition.down();
+ 
+-                    if (this.S() && this.getBiome(blockposition1).e()) {
+-                        this.getType(blockposition1).getBlock().k(this, blockposition1);
+-                    }
++            if (this.w(blockposition1)) {
++                // CraftBukkit start
++                BlockState blockState = this.getWorld().getBlockAt(blockposition1.getX(), blockposition1.getY(), blockposition1.getZ()).getState();
++                blockState.setTypeId(Block.getId(Blocks.ICE));
++
++                BlockFormEvent iceBlockForm = new BlockFormEvent(blockState.getBlock(), blockState);
++                this.getServer().getPluginManager().callEvent(iceBlockForm);
++                if (!iceBlockForm.isCancelled()) {
++                    blockState.update(true);
+                 }
++                // CraftBukkit end
++            }
+ 
+-                this.methodProfiler.c("tickBlocks");
+-                timings.chunkTicksBlocks.startTiming(); // Spigot
+-                i1 = this.getGameRules().c("randomTickSpeed");
+-                if (i1 > 0) {
+-                    ChunkSection[] achunksection = chunk.getSections();
+-                    int j1 = achunksection.length;
+-
+-                    for (int k1 = 0; k1 < j1; ++k1) {
+-                        ChunkSection chunksection = achunksection[k1];
+-
+-                        if (chunksection != null && chunksection.shouldTick()) {
+-                            for (int l1 = 0; l1 < i1; ++l1) {
+-                                this.m = this.m * 3 + 1013904223;
+-                                int i2 = this.m >> 2;
+-                                int j2 = i2 & 15;
+-                                int k2 = i2 >> 8 & 15;
+-                                int l2 = i2 >> 16 & 15;
+-
+-                                ++j;
+-                                IBlockData iblockdata = chunksection.getType(j2, l2, k2);
+-                                Block block = iblockdata.getBlock();
+-
+-                                if (block.isTicking()) {
+-                                    ++i;
+-                                    block.a((World) this, new BlockPosition(j2 + k, l2 + chunksection.getYPosition(), k2 + l), iblockdata, this.random);
+-                                }
+-                            }
+-                        }
+-                    }
++            if (this.S() && this.f(blockposition, true)) {
++                // CraftBukkit start
++                BlockState blockState = this.getWorld().getBlockAt(blockposition.getX(), blockposition.getY(), blockposition.getZ()).getState();
++                blockState.setTypeId(Block.getId(Blocks.SNOW_LAYER));
++
++                BlockFormEvent snow = new BlockFormEvent(blockState.getBlock(), blockState);
++                this.getServer().getPluginManager().callEvent(snow);
++                if (!snow.isCancelled()) {
++                    blockState.update(true);
+                 }
+-                timings.chunkTicksBlocks.stopTiming(); // Spigot
++                // CraftBukkit end
+             }
+ 
++            if (this.S() && this.getBiome(blockposition1).e()) {
++                this.getType(blockposition1).getBlock().k(this, blockposition1);
++            }
+         }
+-        // Spigot Start
+-        if ( spigotConfig.clearChunksOnTick )
+-        {
+-            chunkTickList.clear();
++
++        this.methodProfiler.c("tickBlocks");
++        timings.chunkTicksBlocks.startTiming(); // Spigot
++        i1 = this.getGameRules().c("randomTickSpeed");
++        if (i1 > 0) {
++            ChunkSection[] achunksection = chunk.getSections();
++            int j1 = achunksection.length;
++
++            for (int k1 = 0; k1 < j1; ++k1) {
++                ChunkSection chunksection = achunksection[k1];
++
++                if (chunksection != null && chunksection.shouldTick()) {
++                    for (int l1 = 0; l1 < i1; ++l1) {
++                        this.m = this.m * 3 + 1013904223;
++                        int i2 = this.m >> 2;
++                        int j2 = i2 & 15;
++                        int k2 = i2 >> 8 & 15;
++                        int l2 = i2 >> 16 & 15;
++
++                        ++j;
++                        IBlockData iblockdata = chunksection.getType(j2, l2, k2);
++                        Block block = iblockdata.getBlock();
++
++                        if (block.isTicking()) {
++                            ++i;
++                            block.a((World) this, new BlockPosition(j2 + k, l2 + chunksection.getYPosition(), k2 + l), iblockdata, this.random);
++                        }
++                    }
++                }
++            }
+         }
+-        // Spigot End
++        timings.chunkTicksBlocks.stopTiming(); // Spigot
+     }
++    // PandaSpigot end
+ 
+     protected BlockPosition a(BlockPosition blockposition) {
+         BlockPosition blockposition1 = this.q(blockposition);
