@@ -1,0 +1,515 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: anzz1 <anzz1@live.com>
+Date: Sun, 12 Jul 2026 23:36:55 +0000
+Subject: [PATCH] Configurable animal diets
+
+
+diff --git a/src/main/java/com/hpfxd/pandaspigot/config/PandaSpigotConfig.java b/src/main/java/com/hpfxd/pandaspigot/config/PandaSpigotConfig.java
+index c63cd15c13b503d91ef0245ffe0de7f85dd6f540..cb24c440e2c7190348e02ad14f1da246538044f6 100644
+--- a/src/main/java/com/hpfxd/pandaspigot/config/PandaSpigotConfig.java
++++ b/src/main/java/com/hpfxd/pandaspigot/config/PandaSpigotConfig.java
+@@ -14,8 +14,10 @@ import org.spongepowered.configurate.util.MapFactories;
+ import org.spongepowered.configurate.util.NamingSchemes;
+ 
+ import java.io.File;
++import java.util.Arrays;
+ import java.util.HashMap;
+ import java.util.Map;
++import java.util.List;
+ 
+ @ConfigSerializable
+ @SuppressWarnings({"FieldCanBeLocal", "FieldMayBeFinal"})
+@@ -130,4 +132,15 @@ public class PandaSpigotConfig {
+ 
+     @Comment("Protect spawn from explosions")
+     public boolean betterSpawnProtection = true;
++
++    @Comment("What can animals be fed with\n" +
++        "Wolves can only be fed Food items\n" +
++        "Set to an empty array [] to disallow feeding (and breeding)")
++    public List<String> dietChicken = Arrays.asList("wheat_seeds");
++    public List<String> dietCow = Arrays.asList("wheat");
++    public List<String> dietOcelot = Arrays.asList("fish");
++    public List<String> dietPig = Arrays.asList("carrot");
++    public List<String> dietRabbit = Arrays.asList("carrot", "golden_carrot", "yellow_flower");
++    public List<String> dietSheep = Arrays.asList("wheat");
++    public List<String> dietWolf = Arrays.asList("porkchop", "cooked_porkchop", "beef", "cooked_beef", "chicken", "cooked_chicken", "rotten_flesh", "rabbit", "cooked_rabbit", "mutton", "cooked_mutton");
+ }
+diff --git a/src/main/java/net/minecraft/server/EntityChicken.java b/src/main/java/net/minecraft/server/EntityChicken.java
+index 0d279987f2d6af228a5256cb32ee90995a4b708c..5ee8250b785016edce143cdffb20aebed8041757 100644
+--- a/src/main/java/net/minecraft/server/EntityChicken.java
++++ b/src/main/java/net/minecraft/server/EntityChicken.java
+@@ -1,5 +1,11 @@
+ package net.minecraft.server;
+ 
++// PandaSpigot start
++import com.google.common.collect.Sets;
++import java.util.Set;
++import java.util.logging.Level;
++// PandaSpigot end
++
+ public class EntityChicken extends EntityAnimal {
+ 
+     public float bm;
+@@ -9,15 +15,30 @@ public class EntityChicken extends EntityAnimal {
+     public float br = 1.0F;
+     public int bs;
+     public boolean bt;
++    private static Set<Item> TEMPTATION_ITEMS = null; // PandaSpigot - Configurable animal diets
+ 
+     public EntityChicken(World world) {
+         super(world);
++        // PandaSpigot start - Configurable animal diets
++        if (TEMPTATION_ITEMS == null) {
++            Set<Item> temptItems = Sets.newHashSet();
++            for (String s : com.hpfxd.pandaspigot.config.PandaSpigotConfig.get().dietChicken) {
++                Item item = Item.getByNameOrId(s);
++                if (item != null) {
++                    temptItems.add(item);
++                } else {
++                    org.bukkit.Bukkit.getLogger().log(Level.SEVERE, "Configuration: pandaspigot.yml: dietChicken: Invalid item: '" + s + "'!");
++                }
++            }
++            TEMPTATION_ITEMS = temptItems;
++        }
++        // PandaSpigot end
+         this.setSize(0.4F, 0.7F);
+         this.bs = this.random.nextInt(6000) + 6000;
+         this.goalSelector.a(0, new PathfinderGoalFloat(this));
+         this.goalSelector.a(1, new PathfinderGoalPanic(this, 1.4D));
+         this.goalSelector.a(2, new PathfinderGoalBreed(this, 1.0D));
+-        this.goalSelector.a(3, new PathfinderGoalTempt(this, 1.0D, Items.WHEAT_SEEDS, false));
++        this.goalSelector.a(3, new PathfinderGoalTempt(this, 1.0D, false, TEMPTATION_ITEMS)); // PandaSpigot - Configurable animal diets
+         this.goalSelector.a(4, new PathfinderGoalFollowParent(this, 1.1D));
+         this.goalSelector.a(5, new PathfinderGoalRandomStroll(this, 1.0D));
+         this.goalSelector.a(6, new PathfinderGoalLookAtPlayer(this, EntityHuman.class, 6.0F));
+@@ -105,7 +126,7 @@ public class EntityChicken extends EntityAnimal {
+     }
+ 
+     public boolean d(ItemStack itemstack) {
+-        return itemstack != null && itemstack.getItem() == Items.WHEAT_SEEDS;
++        return itemstack != null && TEMPTATION_ITEMS.contains(itemstack.getItem()); // PandaSpigot - Configurable animal diets
+     }
+ 
+     public void a(NBTTagCompound nbttagcompound) {
+diff --git a/src/main/java/net/minecraft/server/EntityCow.java b/src/main/java/net/minecraft/server/EntityCow.java
+index b5627b7cc28744eb5d702ecb44304e6865cce92e..82f42546ac622f362800b0e70faf44ff31c72751 100644
+--- a/src/main/java/net/minecraft/server/EntityCow.java
++++ b/src/main/java/net/minecraft/server/EntityCow.java
+@@ -5,16 +5,37 @@ import org.bukkit.craftbukkit.event.CraftEventFactory;
+ import org.bukkit.craftbukkit.inventory.CraftItemStack;
+ // CraftBukkit end
+ 
++// PandaSpigot start
++import com.google.common.collect.Sets;
++import java.util.Set;
++import java.util.logging.Level;
++// PandaSpigot end
++
+ public class EntityCow extends EntityAnimal {
++    private static Set<Item> TEMPTATION_ITEMS = null; // PandaSpigot - Configurable animal diets
+ 
+     public EntityCow(World world) {
+         super(world);
++        // PandaSpigot start - Configurable animal diets
++        if (TEMPTATION_ITEMS == null) {
++            Set<Item> temptItems = Sets.newHashSet();
++            for (String s : com.hpfxd.pandaspigot.config.PandaSpigotConfig.get().dietCow) {
++                Item item = Item.getByNameOrId(s);
++                if (item != null) {
++                    temptItems.add(item);
++                } else {
++                    org.bukkit.Bukkit.getLogger().log(Level.SEVERE, "Configuration: pandaspigot.yml: dietCow: Invalid item: '" + s + "'!");
++                }
++            }
++            TEMPTATION_ITEMS = temptItems;
++        }
++        // PandaSpigot end
+         this.setSize(0.9F, 1.3F);
+         ((Navigation) this.getNavigation()).a(true);
+         this.goalSelector.a(0, new PathfinderGoalFloat(this));
+         this.goalSelector.a(1, new PathfinderGoalPanic(this, 2.0D));
+         this.goalSelector.a(2, new PathfinderGoalBreed(this, 1.0D));
+-        this.goalSelector.a(3, new PathfinderGoalTempt(this, 1.25D, Items.WHEAT, false));
++        this.goalSelector.a(3, new PathfinderGoalTempt(this, 1.25D, false, TEMPTATION_ITEMS)); // PandaSpigot - Configurable animal diets
+         this.goalSelector.a(4, new PathfinderGoalFollowParent(this, 1.25D));
+         this.goalSelector.a(5, new PathfinderGoalRandomStroll(this, 1.0D));
+         this.goalSelector.a(6, new PathfinderGoalLookAtPlayer(this, EntityHuman.class, 6.0F));
+@@ -109,4 +130,10 @@ public class EntityCow extends EntityAnimal {
+     public EntityAgeable createChild(EntityAgeable entityageable) {
+         return this.b(entityageable);
+     }
++
++    // PandaSpigot start - Configurable animal diets
++    public boolean d(ItemStack itemstack) {
++        return itemstack != null && TEMPTATION_ITEMS.contains(itemstack.getItem());
++    }
++    // PandaSpigot end
+ }
+diff --git a/src/main/java/net/minecraft/server/EntityOcelot.java b/src/main/java/net/minecraft/server/EntityOcelot.java
+index edcb30792a28abf638012df334a2db626b3c4733..91ed8025a5def2f7a2f723fc79b8cb650f7d8ee6 100644
+--- a/src/main/java/net/minecraft/server/EntityOcelot.java
++++ b/src/main/java/net/minecraft/server/EntityOcelot.java
+@@ -2,19 +2,40 @@ package net.minecraft.server;
+ 
+ import com.google.common.base.Predicate;
+ 
++// PandaSpigot start
++import com.google.common.collect.Sets;
++import java.util.Set;
++import java.util.logging.Level;
++// PandaSpigot end
++
+ public class EntityOcelot extends EntityTameableAnimal {
+ 
+     private PathfinderGoalAvoidTarget<EntityHuman> bo;
+     private PathfinderGoalTempt bp;
+     public boolean spawnBonus = true; // Spigot
++    private static Set<Item> TEMPTATION_ITEMS = null; // PandaSpigot - Configurable animal diets
+ 
+     public EntityOcelot(World world) {
+         super(world);
++        // PandaSpigot start - Configurable animal diets
++        if (TEMPTATION_ITEMS == null) {
++            Set<Item> temptItems = Sets.newHashSet();
++            for (String s : com.hpfxd.pandaspigot.config.PandaSpigotConfig.get().dietOcelot) {
++                Item item = Item.getByNameOrId(s);
++                if (item != null) {
++                    temptItems.add(item);
++                } else {
++                    org.bukkit.Bukkit.getLogger().log(Level.SEVERE, "Configuration: pandaspigot.yml: dietOcelot: Invalid item: '" + s + "'!");
++                }
++            }
++            TEMPTATION_ITEMS = temptItems;
++        }
++        // PandaSpigot end
+         this.setSize(0.6F, 0.7F);
+         ((Navigation) this.getNavigation()).a(true);
+         this.goalSelector.a(1, new PathfinderGoalFloat(this));
+         this.goalSelector.a(2, this.bm);
+-        this.goalSelector.a(3, this.bp = new PathfinderGoalTempt(this, 0.6D, Items.FISH, true));
++        this.goalSelector.a(3, this.bp = new PathfinderGoalTempt(this, 0.6D, true, TEMPTATION_ITEMS)); // PandaSpigot - Configurable animal diets
+         this.goalSelector.a(5, new PathfinderGoalFollowOwner(this, 1.0D, 10.0F, 5.0F));
+         this.goalSelector.a(6, new PathfinderGoalJumpOnBlock(this, 0.8D));
+         this.goalSelector.a(7, new PathfinderGoalLeapAtTarget(this, 0.3F));
+@@ -162,7 +183,7 @@ public class EntityOcelot extends EntityTameableAnimal {
+     }
+ 
+     public boolean d(ItemStack itemstack) {
+-        return itemstack != null && itemstack.getItem() == Items.FISH;
++        return itemstack != null && TEMPTATION_ITEMS.contains(itemstack.getItem()); // PandaSpigot - Configurable animal diets
+     }
+ 
+     public boolean mate(EntityAnimal entityanimal) {
+diff --git a/src/main/java/net/minecraft/server/EntityPig.java b/src/main/java/net/minecraft/server/EntityPig.java
+index 3f2ce15ff362a6a992a4252718d8bf55f2aea08e..328f0345948284a27d41091deaf8c3e3c0c910f1 100644
+--- a/src/main/java/net/minecraft/server/EntityPig.java
++++ b/src/main/java/net/minecraft/server/EntityPig.java
+@@ -2,12 +2,33 @@ package net.minecraft.server;
+ 
+ import org.bukkit.craftbukkit.event.CraftEventFactory; // CraftBukkit
+ 
++// PandaSpigot start
++import com.google.common.collect.Sets;
++import java.util.Set;
++import java.util.logging.Level;
++// PandaSpigot end
++
+ public class EntityPig extends EntityAnimal {
+ 
+     private final PathfinderGoalPassengerCarrotStick bm;
++    private static Set<Item> TEMPTATION_ITEMS = null; // PandaSpigot - Configurable animal diets
+ 
+     public EntityPig(World world) {
+         super(world);
++        // PandaSpigot start - Configurable animal diets
++        if (TEMPTATION_ITEMS == null) {
++            Set<Item> temptItems = Sets.newHashSet();
++            for (String s : com.hpfxd.pandaspigot.config.PandaSpigotConfig.get().dietPig) {
++                Item item = Item.getByNameOrId(s);
++                if (item != null) {
++                    temptItems.add(item);
++                } else {
++                    org.bukkit.Bukkit.getLogger().log(Level.SEVERE, "Configuration: pandaspigot.yml: dietPig: Invalid item: '" + s + "'!");
++                }
++            }
++            TEMPTATION_ITEMS = temptItems;
++        }
++        // PandaSpigot end
+         this.setSize(0.9F, 0.9F);
+         ((Navigation) this.getNavigation()).a(true);
+         this.goalSelector.a(0, new PathfinderGoalFloat(this));
+@@ -15,7 +36,7 @@ public class EntityPig extends EntityAnimal {
+         this.goalSelector.a(2, this.bm = new PathfinderGoalPassengerCarrotStick(this, 0.3F));
+         this.goalSelector.a(3, new PathfinderGoalBreed(this, 1.0D));
+         this.goalSelector.a(4, new PathfinderGoalTempt(this, 1.2D, Items.CARROT_ON_A_STICK, false));
+-        this.goalSelector.a(4, new PathfinderGoalTempt(this, 1.2D, Items.CARROT, false));
++        this.goalSelector.a(4, new PathfinderGoalTempt(this, 1.2D, false, TEMPTATION_ITEMS)); // PandaSpigot - Configurable animal diets
+         this.goalSelector.a(5, new PathfinderGoalFollowParent(this, 1.1D));
+         this.goalSelector.a(6, new PathfinderGoalRandomStroll(this, 1.0D));
+         this.goalSelector.a(7, new PathfinderGoalLookAtPlayer(this, EntityHuman.class, 6.0F));
+@@ -147,7 +168,7 @@ public class EntityPig extends EntityAnimal {
+     }
+ 
+     public boolean d(ItemStack itemstack) {
+-        return itemstack != null && itemstack.getItem() == Items.CARROT;
++        return itemstack != null && TEMPTATION_ITEMS.contains(itemstack.getItem()); // PandaSpigot - Configurable animal diets
+     }
+ 
+     public PathfinderGoalPassengerCarrotStick cm() {
+diff --git a/src/main/java/net/minecraft/server/EntityRabbit.java b/src/main/java/net/minecraft/server/EntityRabbit.java
+index bb47e09aca2163d15e39e7b552d15a2137773b93..cf1b2b4f1d5c6d3a665461826e8cd77dcbea2ae9 100644
+--- a/src/main/java/net/minecraft/server/EntityRabbit.java
++++ b/src/main/java/net/minecraft/server/EntityRabbit.java
+@@ -1,5 +1,11 @@
+ package net.minecraft.server;
+ 
++// PandaSpigot start
++import com.google.common.collect.Sets;
++import java.util.Set;
++import java.util.logging.Level;
++// PandaSpigot end
++
+ public class EntityRabbit extends EntityAnimal {
+ 
+     private EntityRabbit.PathfinderGoalRabbitAvoidTarget<EntityWolf> bm;
+@@ -11,9 +17,24 @@ public class EntityRabbit extends EntityAnimal {
+     private EntityRabbit.EnumRabbitState bt;
+     private int bu;
+     private EntityHuman bv;
++    private static Set<Item> TEMPTATION_ITEMS = null; // PandaSpigot - Configurable animal diets
+ 
+     public EntityRabbit(World world) {
+         super(world);
++        // PandaSpigot start - Configurable animal diets
++        if (TEMPTATION_ITEMS == null) {
++            Set<Item> temptItems = Sets.newHashSet();
++            for (String s : com.hpfxd.pandaspigot.config.PandaSpigotConfig.get().dietRabbit) {
++                Item item = Item.getByNameOrId(s);
++                if (item != null) {
++                    temptItems.add(item);
++                } else {
++                    org.bukkit.Bukkit.getLogger().log(Level.SEVERE, "Configuration: pandaspigot.yml: dietRabbit: Invalid item: '" + s + "'!");
++                }
++            }
++            TEMPTATION_ITEMS = temptItems;
++        }
++        // PandaSpigot end
+         this.bt = EntityRabbit.EnumRabbitState.HOP;
+         this.bu = 0;
+         this.bv = null;
+@@ -30,9 +51,7 @@ public class EntityRabbit extends EntityAnimal {
+         this.navigation.a(2.5F);
+         this.goalSelector.a(1, new PathfinderGoalFloat(this));
+         this.goalSelector.a(1, new EntityRabbit.PathfinderGoalRabbitPanic(this, 1.33D));
+-        this.goalSelector.a(2, new PathfinderGoalTempt(this, 1.0D, Items.CARROT, false));
+-        this.goalSelector.a(2, new PathfinderGoalTempt(this, 1.0D, Items.GOLDEN_CARROT, false));
+-        this.goalSelector.a(2, new PathfinderGoalTempt(this, 1.0D, Item.getItemOf(Blocks.YELLOW_FLOWER), false));
++        this.goalSelector.a(2, new PathfinderGoalTempt(this, 1.0D, false, TEMPTATION_ITEMS)); // PandaSpigot - Configurable animal diets
+         this.goalSelector.a(3, new PathfinderGoalBreed(this, 0.8D));
+         this.goalSelector.a(5, new EntityRabbit.PathfinderGoalEatCarrots(this));
+         this.goalSelector.a(5, new PathfinderGoalRandomStroll(this, 0.6D));
+@@ -256,7 +275,7 @@ public class EntityRabbit extends EntityAnimal {
+     }
+ 
+     private boolean a(Item item) {
+-        return item == Items.CARROT || item == Items.GOLDEN_CARROT || item == Item.getItemOf(Blocks.YELLOW_FLOWER);
++        return TEMPTATION_ITEMS.contains(item); // PandaSpigot - Configurable animal diets
+     }
+ 
+     public EntityRabbit b(EntityAgeable entityageable) {
+diff --git a/src/main/java/net/minecraft/server/EntitySheep.java b/src/main/java/net/minecraft/server/EntitySheep.java
+index 29611a194b8a582d57159231091c66adb7c6944f..d23376d467b1884ec173fa4ba9281f068a85bec9 100644
+--- a/src/main/java/net/minecraft/server/EntitySheep.java
++++ b/src/main/java/net/minecraft/server/EntitySheep.java
+@@ -10,6 +10,12 @@ import org.bukkit.event.player.PlayerShearEntityEvent;
+ import org.bukkit.inventory.InventoryView;
+ // CraftBukkit end
+ 
++// PandaSpigot start
++import com.google.common.collect.Sets;
++import java.util.Set;
++import java.util.logging.Level;
++// PandaSpigot end
++
+ public class EntitySheep extends EntityAnimal {
+ 
+     private final InventoryCrafting bm = new InventoryCrafting(new Container() {
+@@ -27,6 +33,7 @@ public class EntitySheep extends EntityAnimal {
+     private static final Map<EnumColor, float[]> bo = Maps.newEnumMap(EnumColor.class);
+     private int bp;
+     private PathfinderGoalEatTile bq = new PathfinderGoalEatTile(this);
++    private static Set<Item> TEMPTATION_ITEMS = null; // PandaSpigot - Configurable animal diets
+ 
+     public static float[] a(EnumColor enumcolor) {
+         return (float[]) EntitySheep.bo.get(enumcolor);
+@@ -34,12 +41,26 @@ public class EntitySheep extends EntityAnimal {
+ 
+     public EntitySheep(World world) {
+         super(world);
++        // PandaSpigot start - Configurable animal diets
++        if (TEMPTATION_ITEMS == null) {
++            Set<Item> temptItems = Sets.newHashSet();
++            for (String s : com.hpfxd.pandaspigot.config.PandaSpigotConfig.get().dietSheep) {
++                Item item = Item.getByNameOrId(s);
++                if (item != null) {
++                    temptItems.add(item);
++                } else {
++                    org.bukkit.Bukkit.getLogger().log(Level.SEVERE, "Configuration: pandaspigot.yml: dietSheep: Invalid item: '" + s + "'!");
++                }
++            }
++            TEMPTATION_ITEMS = temptItems;
++        }
++        // PandaSpigot end
+         this.setSize(0.9F, 1.3F);
+         ((Navigation) this.getNavigation()).a(true);
+         this.goalSelector.a(0, new PathfinderGoalFloat(this));
+         this.goalSelector.a(1, new PathfinderGoalPanic(this, 1.25D));
+         this.goalSelector.a(2, new PathfinderGoalBreed(this, 1.0D));
+-        this.goalSelector.a(3, new PathfinderGoalTempt(this, 1.1D, Items.WHEAT, false));
++        this.goalSelector.a(3, new PathfinderGoalTempt(this, 1.1D, false, TEMPTATION_ITEMS)); // PandaSpigot - Configurable animal diets
+         this.goalSelector.a(4, new PathfinderGoalFollowParent(this, 1.1D));
+         this.goalSelector.a(5, this.bq);
+         this.goalSelector.a(6, new PathfinderGoalRandomStroll(this, 1.0D));
+@@ -242,6 +263,12 @@ public class EntitySheep extends EntityAnimal {
+         return this.b(entityageable);
+     }
+ 
++    // PandaSpigot start - Configurable animal diets
++    public boolean d(ItemStack itemstack) {
++        return itemstack != null && TEMPTATION_ITEMS.contains(itemstack.getItem());
++    }
++    // PandaSpigot end
++
+     static {
+         EntitySheep.bo.put(EnumColor.WHITE, new float[] { 1.0F, 1.0F, 1.0F});
+         EntitySheep.bo.put(EnumColor.ORANGE, new float[] { 0.85F, 0.5F, 0.2F});
+diff --git a/src/main/java/net/minecraft/server/EntityWolf.java b/src/main/java/net/minecraft/server/EntityWolf.java
+index 469c87a179b452b5df06e79a6bc1d8e7fce07965..40c70f65820f2a90e73bf2407a62c9937798a456 100644
+--- a/src/main/java/net/minecraft/server/EntityWolf.java
++++ b/src/main/java/net/minecraft/server/EntityWolf.java
+@@ -7,6 +7,12 @@ import org.bukkit.craftbukkit.event.CraftEventFactory;
+ import org.bukkit.event.entity.EntityTargetEvent.TargetReason;
+ // CraftBukkit end
+ 
++// PandaSpigot start
++import com.google.common.collect.Sets;
++import java.util.Set;
++import java.util.logging.Level;
++// PandaSpigot end
++
+ public class EntityWolf extends EntityTameableAnimal {
+ 
+     private float bo;
+@@ -15,9 +21,28 @@ public class EntityWolf extends EntityTameableAnimal {
+     private boolean br;
+     private float bs;
+     private float bt;
++    private static Set<ItemFood> TEMPTATION_ITEMS = null; // PandaSpigot - Configurable animal diets
+ 
+     public EntityWolf(World world) {
+         super(world);
++        // PandaSpigot start - Configurable animal diets
++        if (TEMPTATION_ITEMS == null) {
++            Set<ItemFood> temptItems = Sets.newHashSet();
++            for (String s : com.hpfxd.pandaspigot.config.PandaSpigotConfig.get().dietWolf) {
++                Item item = Item.getByNameOrId(s);
++                if (item != null) {
++                    if (item instanceof ItemFood) {
++                        temptItems.add((ItemFood) item);
++                    } else {
++                        org.bukkit.Bukkit.getLogger().log(Level.SEVERE, "Configuration: pandaspigot.yml: dietWolf: Not a Food item: '" + s + "'!");
++                    }
++                } else {
++                    org.bukkit.Bukkit.getLogger().log(Level.SEVERE, "Configuration: pandaspigot.yml: dietWolf: Invalid item: '" + s + "'!");
++                }
++            }
++            TEMPTATION_ITEMS = temptItems;
++        }
++        // PandaSpigot end
+         this.setSize(0.6F, 0.8F);
+         ((Navigation) this.getNavigation()).a(true);
+         this.goalSelector.a(1, new PathfinderGoalFloat(this));
+@@ -243,7 +268,7 @@ public class EntityWolf extends EntityTameableAnimal {
+                 if (itemstack.getItem() instanceof ItemFood) {
+                     ItemFood itemfood = (ItemFood) itemstack.getItem();
+ 
+-                    if (itemfood.g() && this.datawatcher.getFloat(18) < 20.0F) {
++                    if (this.d(itemstack) && this.datawatcher.getFloat(18) < 20.0F) { // PandaSpigot - Configurable animal diets
+                         if (!entityhuman.abilities.canInstantlyBuild) {
+                             --itemstack.count;
+                         }
+@@ -308,7 +333,7 @@ public class EntityWolf extends EntityTameableAnimal {
+     }
+ 
+     public boolean d(ItemStack itemstack) {
+-        return itemstack == null ? false : (!(itemstack.getItem() instanceof ItemFood) ? false : ((ItemFood) itemstack.getItem()).g());
++        return itemstack == null ? false : (!(itemstack.getItem() instanceof ItemFood) ? false : TEMPTATION_ITEMS.contains((ItemFood) itemstack.getItem())); // PandaSpigot - Configurable animal diets
+     }
+ 
+     public int bV() {
+diff --git a/src/main/java/net/minecraft/server/Item.java b/src/main/java/net/minecraft/server/Item.java
+index e20e2296884d2dd333659768bf03fdf5e3b3e430..df3205248bb91c766733cf072b76fb5481b3a578 100644
+--- a/src/main/java/net/minecraft/server/Item.java
++++ b/src/main/java/net/minecraft/server/Item.java
+@@ -37,6 +37,7 @@ public class Item {
+         return (Item) Item.a.get(block);
+     }
+ 
++    public static final Item getByNameOrId(String s) { return Item.d(s); } // PandaSpigot - OBFHELPER
+     public static Item d(String s) {
+         Item item = (Item) Item.REGISTRY.get(new MinecraftKey(s));
+ 
+diff --git a/src/main/java/net/minecraft/server/PathfinderGoalTempt.java b/src/main/java/net/minecraft/server/PathfinderGoalTempt.java
+index 3dedcf832e8ad64f3a8e1388eebef81bf7b3703a..29bfbc7c18a830801bd6b8316cc32e280b24e881 100644
+--- a/src/main/java/net/minecraft/server/PathfinderGoalTempt.java
++++ b/src/main/java/net/minecraft/server/PathfinderGoalTempt.java
+@@ -1,5 +1,10 @@
+ package net.minecraft.server;
+ 
++// PandaSpigot start
++import com.google.common.collect.Sets;
++import java.util.Set;
++// PandaSpigot end
++
+ public class PathfinderGoalTempt extends PathfinderGoal {
+ 
+     private EntityCreature a;
+@@ -12,20 +17,26 @@ public class PathfinderGoalTempt extends PathfinderGoal {
+     private EntityHuman h;
+     private int i;
+     private boolean j;
+-    private Item k;
++    private final Set<Item> temptItems; // PandaSpigot - Configurable animal diets
+     private boolean l;
+     private boolean m;
+ 
++    // PandaSpigot start - Configurable animal diets
+     public PathfinderGoalTempt(EntityCreature entitycreature, double d0, Item item, boolean flag) {
++        this(entitycreature, d0, flag, Sets.newHashSet(new Item[] {item}));
++    }
++
++    public PathfinderGoalTempt(EntityCreature entitycreature, double d0, boolean flag, Set<Item> temptItemsIn) {
+         this.a = entitycreature;
+         this.b = d0;
+-        this.k = item;
++        this.temptItems = temptItemsIn;
+         this.l = flag;
+         this.a(3);
+         if (!(entitycreature.getNavigation() instanceof Navigation)) {
+             throw new IllegalArgumentException("Unsupported mob type for TemptGoal");
+         }
+     }
++    // PandaSpigot end
+ 
+     @Override
+     public boolean a() {
+@@ -39,7 +50,7 @@ public class PathfinderGoalTempt extends PathfinderGoal {
+             } else {
+                 ItemStack itemstack = this.h.bZ();
+ 
+-                return itemstack == null ? false : itemstack.getItem() == this.k;
++                return itemstack == null ? false : this.temptItems.contains(itemstack.getItem()); // PandaSpigot - Configurable animal diets
+             }
+         }
+     }
