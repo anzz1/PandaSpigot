@@ -87,7 +87,7 @@ Normal commands:
 | `p`, `patch` | Apply all patches to the project without building it. Can be run from anywhere. |
 | `j`, `jar` | Build the project, `paperclip.jar` will be output. Can be run from anywhere. |
 | `c`, `clean` | Removes build files under `PandaSpigot-API`, `PandaSpigot-Server`. |
-| `dc`, `distclean` | Removes all generated files, `PandaSpigot-API`, `PandaSpigot-Server`, and work. |
+| `dc`, `distclean` | Removes all generated files, `PandaSpigot-API`, `PandaSpigot-Server`, `base`, and `work`. |
 | `con`, `continue` | Shortcut command for running `git am --continue` or `git rebase --continue`. |
 
 Commands that require `. ./panda install` first:
